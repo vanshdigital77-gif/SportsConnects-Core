@@ -14,7 +14,8 @@ import {
   Timer,
   Award,
   ArrowUpRight,
-  ShieldCheck
+  ShieldCheck,
+  Clock
 } from 'lucide-react';
 import { 
   XAxis, 
@@ -25,12 +26,12 @@ import {
   AreaChart, 
   Area 
 } from 'recharts';
-// Fix: Removed subDays from date-fns import as it was causing an error and switched to addDays with negative values
 import { format, addDays, isSameDay, differenceInDays, isWithinInterval } from 'date-fns';
 import StreakCard from './StreakCard';
 import TrainingForm from './TrainingForm';
 import StatsCard from './StatsCard';
 import PremiumFeatureOverlay from './PremiumFeatureOverlay';
+import { calculateACWR, calculateRecoveryScore, getCalibrationStatus } from '../src/services/performanceScience';
 
 interface AthleteDashboardProps {
   user: User;
@@ -46,6 +47,10 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, logs, onAddLo
     return logs.filter(l => l.athleteId === user.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [logs, user.id]);
 
+  const acwrInsight = useMemo(() => calculateACWR(athleteLogs), [athleteLogs]);
+  const recoveryInsight = useMemo(() => calculateRecoveryScore(athleteLogs), [athleteLogs]);
+  const calibration = useMemo(() => getCalibrationStatus(user), [user]);
+
   const levelData = useMemo(() => {
     const totalSessions = athleteLogs.length;
     let level = 'Rookie';
@@ -59,69 +64,9 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, logs, onAddLo
     return { level, xpPercent };
   }, [athleteLogs]);
 
-  const insights = useMemo(() => {
-    if (athleteLogs.length === 0) return { 
-      recovery: 0, 
-      momentum: 'Stable', 
-      momentumColor: 'text-gray-400', 
-      momentumDesc: 'Awaiting data...',
-      injuryRisk: 'Low',
-      riskColor: 'text-green-500',
-      suggestion: 'Log your first session to begin.' 
-    };
-    
-    const lastLog = athleteLogs[0];
-    const avgSleep = lastLog.sleepHours || 7;
-    const avgRHR = lastLog.restingHeartRate || 65;
-    
-    let recovery = (avgSleep / 10) * 40 + (Math.max(0, 100 - avgRHR)) * 0.4 + (10 - lastLog.intensity) * 2;
-    recovery = Math.min(100, Math.max(0, Math.round(recovery)));
-
-    const last7Days = athleteLogs.filter(l => differenceInDays(new Date(), new Date(l.date)) <= 7);
-    const last28Days = athleteLogs.filter(l => differenceInDays(new Date(), new Date(l.date)) <= 28);
-    
-    // Fix: Declared avgIntensity before its use to prevent block-scoped variable error
-    const avgIntensity = last7Days.reduce((a, b) => a + b.intensity, 0) / (last7Days.length || 1);
-
-    const acuteLoad = last7Days.reduce((a, b) => a + (b.intensity * b.duration), 0) / 7;
-    const chronicLoad = last28Days.reduce((a, b) => a + (b.intensity * b.duration), 0) / 28;
-    const ratio = acuteLoad / (chronicLoad || 1);
-
-    let injuryRisk = 'Low';
-    let riskColor = 'text-green-500';
-    if (ratio > 1.5) { injuryRisk = 'High'; riskColor = 'text-red-500'; }
-    else if (ratio > 1.2) { injuryRisk = 'Moderate'; riskColor = 'text-yellow-500'; }
-
-    let momentum = 'Plateau';
-    let momentumColor = 'text-yellow-500';
-    let momentumDesc = 'Your training load is consistent but lacks variability to trigger new adaptations.';
-
-    if (avgIntensity > 7 && recovery < 40) {
-      momentum = 'Burnout Risk';
-      momentumColor = 'text-red-500';
-      momentumDesc = 'Acute load exceeds recovery capacity. Biological markers show high fatigue.';
-    } else if (last7Days.length >= 5 && ratio >= 1.1) {
-      momentum = 'Peak Zone';
-      momentumColor = 'text-blue-500';
-      momentumDesc = 'Optimal balance of stimulus and adaptation. You are in your prime training window.';
-    } else if (last7Days.length >= 3 && ratio > 1.0) {
-      momentum = 'Building Momentum';
-      momentumColor = 'text-[#E6C264]';
-      momentumDesc = 'Increasing acute load relative to chronic baseline. Functional overreaching detected.';
-    }
-
-    let suggestion = 'Maintain current load.';
-    if (injuryRisk === 'High' || recovery < 30) suggestion = 'Mandatory recovery day. Focus on mobility.';
-    else if (momentum === 'Plateau') suggestion = 'Introduce 1 high-intensity interval session.';
-    else if (momentum === 'Peak Zone') suggestion = 'Maintain volume. Focus on precision and skill.';
-
-    return { recovery, momentum, momentumColor, momentumDesc, injuryRisk, riskColor, suggestion };
-  }, [athleteLogs]);
-
   const progressStory = useMemo(() => {
     if (athleteLogs.length < 2) return "Your performance story is just beginning. Every session counts.";
     
-    // Fix: Using addDays with negative values instead of subDays
     const thisWeekInterval = { start: addDays(new Date(), -7), end: new Date() };
     const lastWeekInterval = { start: addDays(new Date(), -14), end: addDays(new Date(), -7) };
 
@@ -198,33 +143,70 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, logs, onAddLo
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StreakCard streak={streak} />
+        
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-lg transition-all">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Momentum Meter</p>
+            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">ACWR (Load Ratio)</p>
             <Activity className="text-blue-500" size={18} />
           </div>
-          <h4 className={`text-xl font-black ${insights.momentumColor}`}>{insights.momentum}</h4>
-          <p className="text-[10px] text-gray-400 mt-2 font-medium leading-relaxed group-hover:text-gray-600 transition-colors">{insights.momentumDesc}</p>
+          <h4 className={`text-xl font-black ${acwrInsight.status === 'optimal' ? 'text-green-500' : acwrInsight.status === 'warning' ? 'text-orange-500' : 'text-red-500'}`}>
+            {acwrInsight.value}
+          </h4>
+          <p className="text-[10px] text-gray-400 mt-2 font-medium leading-relaxed group-hover:text-gray-600 transition-colors">{acwrInsight.description}</p>
         </div>
+
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-lg transition-all">
           <div className="flex items-center justify-between mb-4">
             <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Injury Risk</p>
-            <ShieldAlert className={insights.riskColor} size={18} />
+            <ShieldAlert className={acwrInsight.status === 'danger' ? 'text-red-500' : acwrInsight.status === 'warning' ? 'text-orange-500' : 'text-green-500'} size={18} />
           </div>
-          <h4 className={`text-xl font-black ${insights.riskColor}`}>{insights.injuryRisk}</h4>
+          <h4 className={`text-xl font-black ${acwrInsight.status === 'danger' ? 'text-red-500' : acwrInsight.status === 'warning' ? 'text-orange-500' : 'text-green-500'}`}>
+            {acwrInsight.status === 'danger' ? 'High' : acwrInsight.status === 'warning' ? 'Moderate' : 'Low'}
+          </h4>
           <p className="text-[10px] text-gray-400 mt-2 font-medium leading-relaxed">
-            {insights.injuryRisk === 'Low' ? 'Your chronic load is well-managed.' : 'Alert: Acute vs Chronic load ratio is peaking.'}
+            {acwrInsight.status === 'calibration' ? 'Establishing baseline...' : 'Based on Acute:Chronic workload ratio.'}
           </p>
         </div>
+
         <div className="bg-[#1D3D76] p-6 rounded-2xl text-white shadow-lg flex flex-col justify-between group">
           <p className="text-blue-200 text-xs font-bold uppercase tracking-widest">Readiness State</p>
           <div className="flex items-center space-x-3 mt-4">
-            <div className={`w-3 h-3 rounded-full animate-pulse ${insights.recovery > 70 ? 'bg-green-500' : 'bg-[#E6C264]'}`}></div>
-            <span className="text-2xl font-black">{insights.recovery > 75 ? 'Optimal' : insights.recovery > 45 ? 'Conditioned' : 'Rest Required'}</span>
+            <div className={`w-3 h-3 rounded-full animate-pulse ${recoveryInsight.status === 'optimal' ? 'bg-green-500' : 'bg-[#E6C264]'}`}></div>
+            <span className="text-2xl font-black">{recoveryInsight.value}</span>
           </div>
           <p className="text-[10px] text-blue-300 mt-2 font-medium">Synced with Bio-Metrics</p>
         </div>
       </div>
+
+      {/* Performance Alerts & Guidance */}
+      {(acwrInsight.status === 'danger' || recoveryInsight.status === 'danger') && (
+        <div className="bg-red-50 border border-red-100 p-6 rounded-[2rem] flex items-start space-x-4 animate-pulse">
+          <ShieldAlert className="text-red-600 mt-1 shrink-0" size={24} />
+          <div>
+            <h4 className="text-red-900 font-black uppercase text-xs tracking-widest mb-1">Medical Advisory Notice</h4>
+            <p className="text-red-700 text-sm font-bold leading-relaxed">
+              If you are experiencing pain, discomfort, or signs of injury, please consult a qualified medical professional or sports doctor immediately. This platform does not replace professional medical evaluation.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {athleteLogs.length > 5 && acwrInsight.status === 'warning' && (
+        <div className="bg-blue-50 border border-blue-100 p-6 rounded-[2rem] flex items-start justify-between space-x-4">
+          <div className="flex items-start space-x-4">
+            <TrendingUp className="text-blue-600 mt-1 shrink-0" size={24} />
+            <div>
+              <h4 className="text-blue-900 font-black uppercase text-xs tracking-widest mb-1">Performance Support Suggestion</h4>
+              <p className="text-blue-700 text-sm font-bold leading-relaxed">
+                If you are not reaching your desired performance levels, consider enrolling in professional sports training sessions through SportsConnects to receive personalized coaching support.
+              </p>
+            </div>
+          </div>
+          <button className="bg-[#1D3D76] text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-900 transition-all shrink-0">
+            Find a Coach
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="relative bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden lg:col-span-1">
@@ -235,8 +217,8 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, logs, onAddLo
             <h3 className="text-xl font-black text-[#1D3D76]">Readiness Score</h3>
           </div>
           <div className="text-center space-y-4">
-            <div className="text-7xl font-black text-[#1D3D76] tracking-tighter">{insights.recovery}%</div>
-            <p className="text-xs text-gray-500 px-4 leading-relaxed">Your central nervous system is {insights.recovery > 70 ? 'fully restored and primed for maximum effort sessions' : 'under moderate stress'}.</p>
+            <div className="text-7xl font-black text-[#1D3D76] tracking-tighter">{recoveryInsight.value}</div>
+            <p className="text-xs text-gray-500 px-4 leading-relaxed">{recoveryInsight.description}</p>
           </div>
           {user.subscriptionStatus === 'FREE' && <PremiumFeatureOverlay onUpgrade={onUpgrade} title="Performance Science" />}
         </div>
@@ -266,7 +248,7 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, logs, onAddLo
                     <Zap size={14} className="text-[#E6C264]" fill="#E6C264" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Adaptive Training Suggestion</span>
                   </div>
-                  <p className="text-sm font-bold mt-2">{insights.suggestion}</p>
+                  <p className="text-sm font-bold mt-2">{acwrInsight.description}</p>
                 </div>
                 <div className="p-5 bg-white border border-gray-100 rounded-[2rem] shadow-sm flex items-center justify-between">
                   <div>

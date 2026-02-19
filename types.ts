@@ -14,6 +14,7 @@ export interface User {
   avatar?: string;
   xp?: number;
   level?: string;
+  joinedAt: string; // ISO date string
 }
 
 export interface TrainingLog {

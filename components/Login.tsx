@@ -21,7 +21,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       name: name || email.split('@')[0],
       email: email,
       role: role,
-      subscriptionStatus: 'FREE'
+      subscriptionStatus: 'FREE',
+      joinedAt: new Date().toISOString()
     };
     onLogin(mockUser);
   };

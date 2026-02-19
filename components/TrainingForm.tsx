@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { SportType, TrainingLog } from '../types';
 import { SPORTS_CONFIG } from '../constants';
-import { X, Save, Zap, Heart, Moon } from 'lucide-react';
+import { X, Save, Zap, Heart, Moon, AlertCircle } from 'lucide-react';
+import { validateTrainingInput } from '../src/services/performanceScience';
 
 interface TrainingFormProps {
   athleteId: string;
@@ -19,6 +20,7 @@ const TrainingForm: React.FC<TrainingFormProps> = ({ athleteId, onClose, onSubmi
   const [rhr, setRhr] = useState(60);
   const [notes, setNotes] = useState('');
   const [metrics, setMetrics] = useState<Record<string, any>>({});
+  const [error, setError] = useState<string | null>(null);
 
   const sportConfig = SPORTS_CONFIG[sportType];
 
@@ -28,6 +30,21 @@ const TrainingForm: React.FC<TrainingFormProps> = ({ athleteId, onClose, onSubmi
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
+    const logData: Partial<TrainingLog> = {
+      duration,
+      intensity,
+      sleepHours,
+      restingHeartRate: rhr
+    };
+
+    const validationError = validateTrainingInput(logData);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     const newLog: TrainingLog = {
       id: Math.random().toString(36).substr(2, 9),
       athleteId,
@@ -57,6 +74,12 @@ const TrainingForm: React.FC<TrainingFormProps> = ({ athleteId, onClose, onSubmi
       </div>
 
       <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+        {error && (
+          <div className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center space-x-3 text-red-600 animate-shake">
+            <AlertCircle size={20} />
+            <p className="text-sm font-bold">{error}</p>
+          </div>
+        )}
         {/* Sport Discipline */}
         <div>
           <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Choose Discipline</label>
