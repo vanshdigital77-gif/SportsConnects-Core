@@ -1,0 +1,7 @@
+{
+  "name": "SportsConnects Athlete Progress Tracker",
+  "description": "A high-performance multi-sport tracking platform with dynamic forms, streak monitoring, and advanced analytics for athletes and coaches.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
